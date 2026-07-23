@@ -18,6 +18,7 @@ import (
 	httpapi "github.com/conductor-ai/conductor/api/http"
 	"github.com/conductor-ai/conductor/core/pipeline"
 	"github.com/conductor-ai/conductor/core/ports"
+	"github.com/conductor-ai/conductor/core/workflow"
 	"github.com/conductor-ai/conductor/internal/config"
 	"github.com/conductor-ai/conductor/internal/registry"
 )
@@ -62,28 +63,58 @@ func New(cfg *config.Config, log *slog.Logger) (*Kernel, error) {
 		return nil, err
 	}
 
+	timeout := time.Duration(cfg.Server.RequestTimeout) * time.Second
 	engine := pipeline.New(pipeline.Options{
 		Providers:      providers,
 		Router:         router,
 		Traces:         traces,
 		Logger:         log,
-		AttemptTimeout: time.Duration(cfg.Server.RequestTimeout) * time.Second,
+		AttemptTimeout: timeout,
 	})
 
+	workflows, err := buildWorkflows(cfg, engine, timeout, log)
+	if err != nil {
+		k.runCleanups()
+		return nil, err
+	}
+
 	k.server = httpapi.New(httpapi.Config{
-		Engine:  engine,
-		Traces:  traces,
-		APIKey:  cfg.Server.APIKey,
-		Summary: configSummary(cfg),
-		Logger:  log,
+		Engine:    engine,
+		Traces:    traces,
+		Workflows: workflows,
+		APIKey:    cfg.Server.APIKey,
+		Summary:   configSummary(cfg),
+		Logger:    log,
 	})
 
 	log.Info("kernel composed",
 		"providers", providers.Len(),
 		"router", cfg.Router.Use,
 		"traces", traces != nil,
+		"workflows", workflows.Len(),
 		"address", cfg.Server.Address)
 	return k, nil
+}
+
+// buildWorkflows loads workflow definitions (if a directory is configured) and
+// wires the workflow engine on top of the request pipeline, so every LLM node
+// inherits routing, fallback, tracing, and cost accounting. It always returns a
+// usable Service — empty when no workflows are configured.
+func buildWorkflows(cfg *config.Config, engine *pipeline.Engine, timeout time.Duration, log *slog.Logger) (*workflow.Service, error) {
+	dir := ""
+	if cfg.Workflows != nil {
+		dir = cfg.Workflows.Dir
+	}
+	defs, err := workflow.LoadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	wfEngine := workflow.NewEngine(engine, log, timeout)
+	svc, err := workflow.NewService(defs, wfEngine)
+	if err != nil {
+		return nil, err
+	}
+	return svc, nil
 }
 
 // configSummary distills the parsed config into the redacted view the gateway

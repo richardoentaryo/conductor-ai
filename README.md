@@ -222,6 +222,35 @@ SQLite persistence, and the HTTP gateway (fallback, SSE, auth, error handling).
 
 ---
 
+## Workflows (Phase 2)
+
+Compose multi-step **DAGs** where each node is an LLM call. Independent nodes run
+in parallel; outputs thread between nodes via `{{ inputs.x }}` and
+`{{ nodes.<id>.output }}`. Because every node runs through the request pipeline,
+each inherits routing, **fallback**, tracing, and cost accounting — and the run
+reports per-node provider, tokens, and cost.
+
+Define workflows as YAML in a directory and point config at it:
+
+```yaml
+workflows:
+  dir: ./workflows
+```
+
+See [`workflows/summarize.yaml`](workflows/summarize.yaml) (a diamond DAG:
+`research → summary + keywords (parallel) → report`). Endpoints:
+
+```bash
+curl localhost:8080/v1/workflows                     # list definitions
+curl localhost:8080/v1/workflows/summarize           # one definition
+curl localhost:8080/v1/workflows/summarize/run \
+  -H 'Content-Type: application/json' \
+  -d '{"inputs":{"text":"...document..."}}'          # run -> full WorkflowRun
+```
+
+The response is a `WorkflowRun`: overall status + every node's output, provider,
+tokens, cost, and trace ID. Run persistence and a workflows UI tab are next.
+
 ## Releasing
 
 Releases are automated with [GoReleaser](https://goreleaser.com). Pushing a

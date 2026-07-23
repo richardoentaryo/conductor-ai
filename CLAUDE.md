@@ -23,9 +23,15 @@ chain), read-only Config view (new `GET /v1/config`, secrets redacted), and a
 `web/` (Node build-time only; `conductor start` UX unchanged). Build via
 `make ui-build` (build/run depend on it; CI + GoReleaser run it before Go steps).
 
+**Phase 2 workflow engine: DONE (lean DAG).** `core/workflow` executes YAML-defined
+DAGs — LLM nodes, parallel layers, `{{inputs.x}}`/`{{nodes.id.output}}` threading,
+per-node retry/timeout. Each node runs through the pipeline (inherits fallback/
+trace/cost). Config `workflows.dir`; endpoints `GET /v1/workflows[/{name}]`,
+`POST /v1/workflows/{name}/run` → full `WorkflowRun`. Example: `workflows/summarize.yaml`.
+NOT yet: run persistence, workflows UI tab, tool/condition node types.
+
 Defined-but-unwired ports: `MemoryStore`, `Tool` (no impl); `PromptStore` (impl in
-sqlite, no HTTP endpoint). Repo is **public**, **MIT** licensed. Likely next:
-**Phase 2 workflow/DAG engine** (would light up the Workflows UI tab).
+sqlite, no HTTP endpoint). Repo is **public**, **MIT** licensed.
 
 ## Build / run / test
 Needs Go 1.24+. Use the `Makefile`:
@@ -76,10 +82,10 @@ Add a module: implement the port, `registry.Register` in `init()`, blank-import 
   serves a 404 at `/` (expected — no UI without the npm build).
 
 ## Next steps
-1. Decide repo visibility + add LICENSE. 2. **Phase 2 workflow/DAG engine**: a
-`ports.Workflow` contract (nodes→providers/tools, edges/conditions, retries,
-persistence) + `workflow.dag` module + run/inspect endpoint; reuse pipeline per node.
-3. Wire first `Tool` (filesystem). 4. Expose `PromptStore` via HTTP.
+Phase 2 lean DAG shipped. Next: 1. **Persist workflow runs** (SQLite +
+`GET /v1/workflow-runs/{id}`) and light up the **Workflows UI tab**.
+2. Add **tool/condition node types** + wire first `Tool` (filesystem).
+3. Expose `PromptStore` via HTTP. 4. Cost/latency-based router module.
 User prefers a short design/plan before big features (plan mode).
 
 ## Ops

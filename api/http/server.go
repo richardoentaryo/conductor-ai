@@ -14,6 +14,7 @@ import (
 
 	"github.com/conductor-ai/conductor/core/pipeline"
 	"github.com/conductor-ai/conductor/core/ports"
+	"github.com/conductor-ai/conductor/core/workflow"
 	"github.com/conductor-ai/conductor/internal/webui"
 )
 
@@ -22,20 +23,22 @@ const traceHeader = "X-Conductor-Trace-Id"
 
 // Server wires the pipeline and stores into HTTP handlers.
 type Server struct {
-	engine  *pipeline.Engine
-	traces  ports.TraceStore // may be nil when persistence is not configured
-	apiKey  string
-	summary ConfigSummary // redacted, read-only view of the active config
-	log     *slog.Logger
+	engine    *pipeline.Engine
+	traces    ports.TraceStore  // may be nil when persistence is not configured
+	workflows *workflow.Service // may be nil / empty when no workflows configured
+	apiKey    string
+	summary   ConfigSummary // redacted, read-only view of the active config
+	log       *slog.Logger
 }
 
 // Config configures a Server.
 type Config struct {
-	Engine  *pipeline.Engine
-	Traces  ports.TraceStore
-	APIKey  string
-	Summary ConfigSummary
-	Logger  *slog.Logger
+	Engine    *pipeline.Engine
+	Traces    ports.TraceStore
+	Workflows *workflow.Service
+	APIKey    string
+	Summary   ConfigSummary
+	Logger    *slog.Logger
 }
 
 // ConfigSummary is a redacted, read-only snapshot of the active configuration,
@@ -74,11 +77,12 @@ func New(cfg Config) *Server {
 		cfg.Logger = slog.Default()
 	}
 	return &Server{
-		engine:  cfg.Engine,
-		traces:  cfg.Traces,
-		apiKey:  cfg.APIKey,
-		summary: cfg.Summary,
-		log:     cfg.Logger,
+		engine:    cfg.Engine,
+		traces:    cfg.Traces,
+		workflows: cfg.Workflows,
+		apiKey:    cfg.APIKey,
+		summary:   cfg.Summary,
+		log:       cfg.Logger,
 	}
 }
 
@@ -90,6 +94,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/traces/{id}", s.requireAuth(s.handleGetTrace))
 	mux.HandleFunc("GET /v1/traces", s.requireAuth(s.handleListTraces))
 	mux.HandleFunc("GET /v1/config", s.requireAuth(s.handleGetConfig))
+	mux.HandleFunc("GET /v1/workflows", s.requireAuth(s.handleListWorkflows))
+	mux.HandleFunc("GET /v1/workflows/{name}", s.requireAuth(s.handleGetWorkflow))
+	mux.HandleFunc("POST /v1/workflows/{name}/run", s.requireAuth(s.handleRunWorkflow))
 
 	// Serve the embedded control-plane dashboard at the root. The "/" pattern is
 	// the least specific subtree, so the explicit "/healthz" and "/v1/..." routes
@@ -244,6 +251,62 @@ func (s *Server) handleListTraces(w http.ResponseWriter, r *http.Request) {
 // module Settings, so no secret can be exposed here.
 func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.summary)
+}
+
+// runWorkflowRequest is the body for POST /v1/workflows/{name}/run.
+type runWorkflowRequest struct {
+	Inputs map[string]string `json:"inputs"`
+}
+
+func (s *Server) handleListWorkflows(w http.ResponseWriter, _ *http.Request) {
+	if s.workflows == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": s.workflows.List()})
+}
+
+func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if s.workflows == nil {
+		writeError(w, http.StatusNotFound, "not_found", "workflow "+name+" not found")
+		return
+	}
+	wf, ok := s.workflows.Get(name)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "workflow "+name+" not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, wf)
+}
+
+func (s *Server) handleRunWorkflow(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if s.workflows == nil {
+		writeError(w, http.StatusNotFound, "not_found", "workflow "+name+" not found")
+		return
+	}
+
+	var body runWorkflowRequest
+	// An empty body is valid (a workflow may declare no inputs); only reject
+	// malformed JSON.
+	if r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request_error", "malformed JSON body: "+err.Error())
+			return
+		}
+	}
+
+	run, err := s.workflows.Run(r.Context(), name, body.Inputs)
+	if err != nil {
+		// Missing workflow or missing declared input — a client error.
+		writeError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return
+	}
+	w.Header().Set(traceHeader, run.ID)
+	// A run that executed but failed is still a valid, fully-formed result; the
+	// caller inspects run.status. We return 200 with the run either way.
+	writeJSON(w, http.StatusOK, run)
 }
 
 // --- middleware ----------------------------------------------------------

@@ -40,6 +40,11 @@ trace_store:
   settings:
     path: conductor.db
 
+# Phase 2: load *.yaml workflow definitions from this directory. Run one with
+# POST /v1/workflows/{name}/run. See workflows/summarize.yaml.
+workflows:
+  dir: ./workflows
+
 # --- Real providers (example; requires the openai/ollama modules + keys) ------
 # providers:
 #   - name: openai-primary

@@ -27,11 +27,19 @@ var defaultYAML []byte
 
 // Config is the fully parsed runtime configuration.
 type Config struct {
-	Server      ServerConfig   `yaml:"server"`
-	Providers   []ModuleConfig `yaml:"providers"`
-	Router      ModuleConfig   `yaml:"router"`
-	TraceStore  *ModuleConfig  `yaml:"trace_store"`
-	PromptStore *ModuleConfig  `yaml:"prompt_store"`
+	Server      ServerConfig     `yaml:"server"`
+	Providers   []ModuleConfig   `yaml:"providers"`
+	Router      ModuleConfig     `yaml:"router"`
+	TraceStore  *ModuleConfig    `yaml:"trace_store"`
+	PromptStore *ModuleConfig    `yaml:"prompt_store"`
+	Workflows   *WorkflowsConfig `yaml:"workflows"`
+}
+
+// WorkflowsConfig configures the Phase 2 workflow engine.
+type WorkflowsConfig struct {
+	// Dir is a directory of *.yaml workflow definitions loaded at startup. Empty
+	// or missing disables workflows.
+	Dir string `yaml:"dir"`
 }
 
 // ServerConfig holds API gateway settings.

@@ -1,0 +1,47 @@
+# Example workflow: a diamond DAG demonstrating fan-out and fan-in.
+#
+#            research
+#            /      \
+#      summary      keywords        (these two run in parallel)
+#            \      /
+#             report
+#
+# Run it (with the server started against a config that sets workflows.dir):
+#   curl localhost:8080/v1/workflows/summarize/run \
+#     -H 'Content-Type: application/json' \
+#     -d '{"inputs":{"text":"...your document..."}}'
+#
+# Each node is a normal chat request, so it inherits routing, fallback, tracing,
+# and cost accounting. Use a model your configured providers serve
+# (config.example.yaml uses "gpt-4o-mini").
+
+name: summarize
+description: Summarize a document, extract keywords, then combine into a report.
+inputs:
+  - text
+
+nodes:
+  - id: research
+    model: gpt-4o-mini
+    prompt: |
+      Read the following document and list its key points:
+
+      {{ inputs.text }}
+
+  - id: summary
+    model: gpt-4o-mini
+    depends_on: [research]
+    prompt: "Write a concise summary from these key points:\n{{ nodes.research.output }}"
+
+  - id: keywords
+    model: gpt-4o-mini
+    depends_on: [research]
+    prompt: "Extract 5 keywords from these key points:\n{{ nodes.research.output }}"
+
+  - id: report
+    model: gpt-4o-mini
+    depends_on: [summary, keywords]
+    prompt: |
+      Produce a short report.
+      Summary: {{ nodes.summary.output }}
+      Keywords: {{ nodes.keywords.output }}
