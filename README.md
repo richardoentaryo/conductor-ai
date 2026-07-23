@@ -78,6 +78,23 @@ modules/memory/sqlite/  SQLite TraceStore + PromptStore (pure-Go, CGO-free)
 
 ## Quick start
 
+### Prebuilt binary (no Go toolchain needed)
+
+Download the archive for your OS/arch from the
+[latest release](https://github.com/richardoentaryo/conductor-ai/releases/latest),
+extract it, and run:
+
+```bash
+# example: Linux amd64
+tar -xzf conductor_*_linux_amd64.tar.gz
+./conductor start
+```
+
+Every release ships binaries for linux, macOS, and Windows (amd64 + arm64), with
+a `checksums.txt` to verify the download.
+
+### From source
+
 Clone and run — no config, no API keys (needs Go 1.24+):
 
 ```bash
@@ -204,6 +221,23 @@ and non-streaming), routing policy, config loading/validation, cost accounting,
 SQLite persistence, and the HTTP gateway (fallback, SSE, auth, error handling).
 
 ---
+
+## Releasing
+
+Releases are automated with [GoReleaser](https://goreleaser.com). Pushing a
+version tag builds and publishes archives + checksums for all platforms:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0        # triggers .github/workflows/release.yml
+```
+
+Dry-run the build locally without tagging:
+
+```bash
+goreleaser check                       # validate .goreleaser.yaml
+goreleaser build --snapshot --clean    # cross-compile all targets into ./dist
+```
 
 ## Roadmap (from the PRD)
 

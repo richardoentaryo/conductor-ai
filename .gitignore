@@ -3,6 +3,9 @@
 /conductor-*
 *.exe
 
+# GoReleaser
+/dist/
+
 # Local runtime state
 *.db
 *.db-shm
