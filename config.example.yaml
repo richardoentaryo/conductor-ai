@@ -1,0 +1,59 @@
+# Conductor example configuration.
+#
+# This keyless demo wires two mock providers so the whole request lifecycle —
+# routing, fallback, streaming, and trace/cost recording — runs with zero API
+# keys. The primary is configured to always fail, so every request visibly fails
+# over to the secondary. Swap in real providers (see the commented block) once
+# you have credentials.
+
+server:
+  address: ":8080"
+  # api_key: ${CONDUCTOR_API_KEY}   # uncomment to require Bearer auth
+  request_timeout: 120
+
+providers:
+  # Primary: forced to fail, to demonstrate automatic failover.
+  - name: primary
+    use: providers.mock
+    settings:
+      models: ["gpt-4o-mini"]
+      fail: true
+
+  # Fallback: serves the request the primary could not.
+  - name: fallback
+    use: providers.mock
+    settings:
+      models: ["gpt-4o-mini"]
+      reply: "Hello from the fallback provider!"
+      latency_ms: 50
+      pricing:
+        input_per_1k: 0.0005
+        output_per_1k: 0.0015
+
+router:
+  use: router.static
+  settings:
+    order: [primary, fallback]
+
+trace_store:
+  use: memory.sqlite
+  settings:
+    path: conductor.db
+
+# --- Real providers (example; requires the openai/ollama modules + keys) ------
+# providers:
+#   - name: openai-primary
+#     use: providers.openai
+#     settings:
+#       api_key: ${OPENAI_API_KEY}
+#       models:
+#         - id: gpt-4o-mini
+#           context_window: 128000
+#           pricing: { input_per_1k: 0.00015, output_per_1k: 0.0006 }
+#   - name: ollama-local
+#     use: providers.ollama
+#     settings:
+#       base_url: http://localhost:11434
+#       models:
+#         - id: llama3.2
+#           context_window: 8192

@@ -1,0 +1,16 @@
+# Build output
+/conductor
+/conductor-*
+*.exe
+
+# Local runtime state
+*.db
+*.db-shm
+*.db-wal
+
+# Editor/OS
+.DS_Store
+*.swp
+
+# Claude Code harness state
+.claude/

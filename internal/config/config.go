@@ -1,0 +1,147 @@
+// Package config loads Conductor's runtime configuration. Configuration is
+// declarative: it names which registered modules to activate (providers, router,
+// stores) and carries each one's opaque settings block, which the kernel hands
+// to that module during provisioning.
+//
+// Secrets never belong in the file: any ${ENV_VAR} reference in the YAML is
+// expanded from the process environment at load time, so API keys are supplied
+// via the environment (e.g. settings.api_key: ${OPENAI_API_KEY}).
+package config
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
+	"regexp"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Config is the fully parsed runtime configuration.
+type Config struct {
+	Server      ServerConfig   `yaml:"server"`
+	Providers   []ModuleConfig `yaml:"providers"`
+	Router      ModuleConfig   `yaml:"router"`
+	TraceStore  *ModuleConfig  `yaml:"trace_store"`
+	PromptStore *ModuleConfig  `yaml:"prompt_store"`
+}
+
+// ServerConfig holds API gateway settings.
+type ServerConfig struct {
+	// Address is the listen address (host:port). Defaults to ":8080".
+	Address string `yaml:"address"`
+	// APIKey, when non-empty, is required in the Authorization header of every
+	// request (Bearer scheme). Empty disables authentication — convenient for
+	// local, keyless demos.
+	APIKey string `yaml:"api_key"`
+	// RequestTimeout is the overall per-request budget in seconds across all
+	// fallback attempts. Defaults to 120. Individual attempts may be capped
+	// tighter by the router/pipeline.
+	RequestTimeout int `yaml:"request_timeout"`
+}
+
+// ModuleConfig declares one module instance to activate.
+type ModuleConfig struct {
+	// Name is the instance name, unique within the running server (e.g.
+	// "openai-primary"). For singleton slots (router, stores) it is optional and
+	// defaults to the module ID.
+	Name string `yaml:"name"`
+	// Use is the registered module-type ID to instantiate (e.g.
+	// "providers.openai", "router.static", "memory.sqlite").
+	Use string `yaml:"use"`
+	// Settings is the module-specific configuration, passed verbatim (re-encoded
+	// as JSON) to the module's Provision hook.
+	Settings map[string]any `yaml:"settings"`
+}
+
+// RawSettings re-encodes Settings as JSON for Provisioner.Provision. It never
+// returns nil: absent settings become an empty JSON object so modules can decode
+// unconditionally.
+func (m ModuleConfig) RawSettings() (json.RawMessage, error) {
+	if m.Settings == nil {
+		return json.RawMessage("{}"), nil
+	}
+	b, err := json.Marshal(m.Settings)
+	if err != nil {
+		return nil, fmt.Errorf("encode settings for module %q: %w", m.Use, err)
+	}
+	return b, nil
+}
+
+// envRef matches ${VAR} references. We intentionally do NOT expand bare $VAR so
+// that prompt templates and other content containing '$' survive untouched.
+var envRef = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+// Load reads, env-expands, parses, and defaults the config at path. Environment
+// variables CONDUCTOR_ADDRESS and CONDUCTOR_API_KEY, when set, override the
+// corresponding server fields after parsing.
+func Load(path string) (*Config, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read config %q: %w", path, err)
+	}
+
+	expanded := envRef.ReplaceAllFunc(raw, func(m []byte) []byte {
+		name := envRef.FindSubmatch(m)[1]
+		return []byte(os.Getenv(string(name)))
+	})
+
+	var cfg Config
+	dec := yaml.NewDecoder(bytes.NewReader(expanded))
+	dec.KnownFields(true) // reject unknown top-level keys — catches typos early
+	if err := dec.Decode(&cfg); err != nil {
+		return nil, fmt.Errorf("parse config %q: %w", path, err)
+	}
+
+	cfg.applyEnvOverrides()
+	cfg.applyDefaults()
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+func (c *Config) applyEnvOverrides() {
+	if v := os.Getenv("CONDUCTOR_ADDRESS"); v != "" {
+		c.Server.Address = v
+	}
+	if v := os.Getenv("CONDUCTOR_API_KEY"); v != "" {
+		c.Server.APIKey = v
+	}
+}
+
+func (c *Config) applyDefaults() {
+	if c.Server.Address == "" {
+		c.Server.Address = ":8080"
+	}
+	if c.Server.RequestTimeout <= 0 {
+		c.Server.RequestTimeout = 120
+	}
+	// A router is mandatory; default to the static router when omitted so a
+	// minimal config (just providers) still works.
+	if c.Router.Use == "" {
+		c.Router.Use = "router.static"
+	}
+}
+
+func (c *Config) validate() error {
+	if len(c.Providers) == 0 {
+		return fmt.Errorf("config: at least one provider must be configured")
+	}
+	seen := map[string]bool{}
+	for i, p := range c.Providers {
+		if p.Use == "" {
+			return fmt.Errorf("config: providers[%d] missing 'use'", i)
+		}
+		name := p.Name
+		if name == "" {
+			return fmt.Errorf("config: providers[%d] (%s) missing 'name'", i, p.Use)
+		}
+		if seen[name] {
+			return fmt.Errorf("config: duplicate provider name %q", name)
+		}
+		seen[name] = true
+	}
+	return nil
+}
