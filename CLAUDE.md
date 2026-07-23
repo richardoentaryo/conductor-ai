@@ -35,12 +35,14 @@ sqlite, no HTTP endpoint). Repo is **public**, **MIT** licensed.
 
 ## Build / run / test
 Needs Go 1.24+. Use the `Makefile`:
-- `make build` → `./conductor` (static, CGO-free; runs `ui-build` first) · `make run` = zero-config demo
-- `make ui-build` → `cd web && npm ci && npm run build` → bundle into `internal/webui/dist`
+- `make build` → `./conductor` (static, CGO-free, **Go only — no Node**) · `make run` = zero-config demo
+- UI is decoupled from `build` (embeds the tracked placeholder otherwise). To embed
+  the real dashboard: `make ui-build` (local Node), or `make ui-docker` (node:20
+  container — for old/missing host Node), or `make build-ui` (UI + binary locally).
 - `make test` (race; sets CGO_ENABLED=1) · `make check` = vet+gofmt+tests (CI enforces)
 - `./conductor start` with no config.yaml → embedded keyless demo (mock failover)
 - Config: YAML + `${ENV}` expansion (secrets via env). See `config.example.yaml`.
-- **Run `make check` before committing.**
+- **Run `make check` before committing.** CI/GoReleaser run `ui-build` explicitly, so releases embed the real UI.
 
 ## Architecture (hexagonal)
 Kernel/domain depend only on **ports**; concrete adapters are **modules**.

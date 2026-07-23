@@ -117,6 +117,12 @@ recording all work instantly.
 
 > The output is a single static, CGO-free binary that cross-compiles to any OS/arch.
 
+> **`make build` needs only Go** — no Node. It embeds a placeholder for the
+> control-plane dashboard. To embed the real dashboard, build the frontend first
+> with `make ui-build` (local Node) or, if your Node is old/missing,
+> `make ui-docker` (builds it in a `node:20` container). If the Docker daemon
+> needs elevation: `make ui-docker DOCKER="sudo docker"`.
+
 Then, in another terminal:
 
 ```bash
