@@ -78,22 +78,27 @@ modules/memory/sqlite/  SQLite TraceStore + PromptStore (pure-Go, CGO-free)
 
 ## Quick start
 
-Clone and run — no config, no API keys:
+Clone and run — no config, no API keys (needs Go 1.24+):
 
 ```bash
 git clone https://github.com/richardoentaryo/conductor-ai.git
 cd conductor-ai
-make install     # builds + puts `conductor` on your PATH (needs Go 1.24+)
-conductor start
+make build          # produces ./conductor in this directory
+./conductor start   # note the leading ./
 ```
 
-`conductor start` with no `config.yaml` boots a **built-in keyless demo** (two
+`./conductor start` with no `config.yaml` boots a **built-in keyless demo** (two
 mock providers, the primary forced to fail) so failover, streaming, and trace
-recording all work instantly. Prefer not to install? `make run` runs it in place,
-or `go run ./cmd/conductor start`.
+recording all work instantly.
 
-> The output is a single static, CGO-free binary — `make build` produces
-> `./conductor`, and it cross-compiles to any OS/arch.
+> **Prefer to type `conductor` instead of `./conductor`?** Run `make install`,
+> which installs into `$(go env GOPATH)/bin` (usually `~/go/bin`). If you then
+> get `command not found: conductor`, that directory isn't on your `PATH` — add
+> it once: `export PATH="$PATH:$(go env GOPATH)/bin"` (append to `~/.zshrc` or
+> `~/.bashrc` to persist). Or skip installing entirely: `make run` runs the demo
+> in place via `go run`.
+
+> The output is a single static, CGO-free binary that cross-compiles to any OS/arch.
 
 Then, in another terminal:
 

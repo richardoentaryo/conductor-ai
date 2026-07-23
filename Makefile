@@ -18,9 +18,18 @@ all: check build
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) $(PKG)
 
-## install: install `conductor` into $GOBIN (or $GOPATH/bin) so it's on PATH
+## install: install `conductor` into $GOBIN (or $GOPATH/bin)
 install:
 	go install -ldflags "$(LDFLAGS)" $(PKG)
+	@bindir="$$(go env GOBIN)"; [ -n "$$bindir" ] || bindir="$$(go env GOPATH)/bin"; \
+	echo "installed 'conductor' -> $$bindir"; \
+	case ":$$PATH:" in \
+	  *":$$bindir:"*) echo "'$$bindir' is on your PATH — run: conductor start" ;; \
+	  *) echo "NOTE: '$$bindir' is NOT on your PATH."; \
+	     echo "      add it once:  export PATH=\"\$$PATH:$$bindir\""; \
+	     echo "      (append to ~/.zshrc or ~/.bashrc to persist)"; \
+	     echo "      or just run:  ./conductor start   (after 'make build')" ;; \
+	esac
 
 ## run: run the built-in demo (zero-config) via `go run`
 run:
