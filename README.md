@@ -252,4 +252,4 @@ complete; their implementations arrive in later phases.
 
 ## License
 
-Open source (license TBD).
+[MIT](LICENSE) © Richard Oentaryo

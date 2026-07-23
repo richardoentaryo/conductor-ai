@@ -16,8 +16,8 @@ Caddy-style module registry, zero-config `conductor start`, CI + GoReleaser.
 Modules: `providers.mock|openai|ollama`, `router.static`, `memory.sqlite`.
 
 Defined-but-unwired ports: `MemoryStore`, `Tool` (no impl); `PromptStore` (impl in
-sqlite, no HTTP endpoint). Open decisions: **repo is PRIVATE** (README release
-links 404 unauthenticated); **no LICENSE** yet. Likely next: **Phase 2 workflow/DAG engine**.
+sqlite, no HTTP endpoint). Repo is **public**, **MIT** licensed. Likely next:
+**Phase 2 workflow/DAG engine**.
 
 ## Build / run / test
 Needs Go 1.24+. Use the `Makefile`:
@@ -53,6 +53,7 @@ Add a module: implement the port, `registry.Register` in `init()`, blank-import 
 - Strong doc comments on exported symbols; comment *why*. Keep docs synced with behavior.
 
 ## Gotchas
+- Repo is public → release download URLs work unauthenticated.
 - `make install` → `$(go env GOPATH)/bin`; if not on PATH → `command not found`. Prefer `./conductor`.
 - `-race` needs a C toolchain (CGO), even though builds are CGO-free.
 - `memory.sqlite` implements 2 ports; method names differ (`Save/Get/List` vs
