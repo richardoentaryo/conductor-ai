@@ -10,6 +10,7 @@ package config
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -17,6 +18,12 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// defaultYAML is the built-in configuration served by Default() when no config
+// file exists. See internal/config/default.yaml.
+//
+//go:embed default.yaml
+var defaultYAML []byte
 
 // Config is the fully parsed runtime configuration.
 type Config struct {
@@ -81,7 +88,30 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read config %q: %w", path, err)
 	}
+	cfg, err := parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("config %q: %w", path, err)
+	}
+	return cfg, nil
+}
 
+// Default returns the built-in configuration used when no config file is
+// present. It wires a keyless, self-contained demo (a failing primary mock and a
+// replying fallback mock) so `conductor start` works on a fresh clone with zero
+// setup and immediately demonstrates automatic failover.
+func Default() (*Config, error) {
+	cfg, err := parse(defaultYAML)
+	if err != nil {
+		// The embedded default is validated by tests; a failure here is a build
+		// defect, not user input.
+		return nil, fmt.Errorf("built-in default config invalid: %w", err)
+	}
+	return cfg, nil
+}
+
+// parse env-expands, decodes, defaults, and validates raw YAML bytes. It is the
+// single code path shared by Load and Default.
+func parse(raw []byte) (*Config, error) {
 	expanded := envRef.ReplaceAllFunc(raw, func(m []byte) []byte {
 		name := envRef.FindSubmatch(m)[1]
 		return []byte(os.Getenv(string(name)))
@@ -91,7 +121,7 @@ func Load(path string) (*Config, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(expanded))
 	dec.KnownFields(true) // reject unknown top-level keys — catches typos early
 	if err := dec.Decode(&cfg); err != nil {
-		return nil, fmt.Errorf("parse config %q: %w", path, err)
+		return nil, fmt.Errorf("parse: %w", err)
 	}
 
 	cfg.applyEnvOverrides()

@@ -78,27 +78,24 @@ modules/memory/sqlite/  SQLite TraceStore + PromptStore (pure-Go, CGO-free)
 
 ## Quick start
 
-### Prerequisites
-Go 1.24+ (only to build; the output is a self-contained binary).
-
-### Build
+Clone and run — no config, no API keys:
 
 ```bash
-# Single static binary — no CGO, cross-compiles anywhere.
-CGO_ENABLED=0 go build -o conductor ./cmd/conductor
+git clone https://github.com/richardoentaryo/conductor-ai.git
+cd conductor-ai
+make install     # builds + puts `conductor` on your PATH (needs Go 1.24+)
+conductor start
 ```
 
-### Run the keyless failover demo
+`conductor start` with no `config.yaml` boots a **built-in keyless demo** (two
+mock providers, the primary forced to fail) so failover, streaming, and trace
+recording all work instantly. Prefer not to install? `make run` runs it in place,
+or `go run ./cmd/conductor start`.
 
-The bundled [`config.example.yaml`](config.example.yaml) wires two **mock**
-providers — the primary forced to fail — so failover, streaming, and trace
-recording all run with **zero API keys**:
+> The output is a single static, CGO-free binary — `make build` produces
+> `./conductor`, and it cross-compiles to any OS/arch.
 
-```bash
-./conductor run --config config.example.yaml
-```
-
-In another terminal:
+Then, in another terminal:
 
 ```bash
 # Non-streaming: watch it fail over to the fallback provider.

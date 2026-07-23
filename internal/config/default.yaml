@@ -1,0 +1,35 @@
+# Built-in default configuration (embedded into the binary).
+#
+# Used by `conductor start` when no config.yaml is present, so a fresh clone runs
+# instantly with zero setup and demonstrates automatic failover: the primary
+# mock provider always fails, so every request visibly falls over to the second.
+#
+# To use real providers, create a config.yaml (see config.example.yaml).
+
+server:
+  address: ":8080"
+
+providers:
+  - name: primary
+    use: providers.mock
+    settings:
+      models: ["gpt-4o-mini"]
+      fail: true
+  - name: fallback
+    use: providers.mock
+    settings:
+      models: ["gpt-4o-mini"]
+      reply: "Hello from Conductor's built-in demo. Add a config.yaml to use real providers."
+      pricing:
+        input_per_1k: 0.0005
+        output_per_1k: 0.0015
+
+router:
+  use: router.static
+  settings:
+    order: [primary, fallback]
+
+trace_store:
+  use: memory.sqlite
+  settings:
+    path: conductor.db

@@ -99,6 +99,21 @@ providers:
 	}
 }
 
+// The embedded default config must always parse, default, and validate — a
+// fresh clone's `conductor start` depends on it.
+func TestDefault_IsValid(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("built-in default config is invalid: %v", err)
+	}
+	if len(cfg.Providers) < 2 {
+		t.Fatalf("expected demo default to wire >=2 providers, got %d", len(cfg.Providers))
+	}
+	if cfg.Server.Address == "" || cfg.Router.Use == "" {
+		t.Fatalf("default missing server/router: %+v", cfg.Server)
+	}
+}
+
 func TestLoad_RejectsUnknownFields(t *testing.T) {
 	p := writeCfg(t, `
 provderz:  # typo
