@@ -63,6 +63,36 @@ jobs:
       - name: Test (race + coverage)
         run: go test -race -cover ./...
 
+  # Lock in the UI/Go decoupling: `make build` must succeed with NO Node present.
+  # We set up only Go (no setup-node) and replace node/npm/npx with stubs that
+  # fail if invoked, so a regression that re-adds an npm dependency to `make
+  # build` turns this job red.
+  build-no-node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Sabotage node/npm/npx (prove build never calls them)
+        run: |
+          dir="$HOME/no-node-shims"
+          mkdir -p "$dir"
+          for tool in node npm npx; do
+            printf '#!/bin/sh\necho "ERROR: %s was invoked during a Go-only build" >&2\nexit 127\n' "$tool" > "$dir/$tool"
+            chmod +x "$dir/$tool"
+          done
+          echo "$dir" >> "$GITHUB_PATH"   # prepended for subsequent steps
+      - name: make build (must succeed without Node)
+        run: |
+          make build
+          test -x ./conductor
+          # The Go-only build must NOT have produced a UI bundle; only the
+          # tracked placeholder should exist in the embed dir.
+          test ! -f internal/webui/dist/index.html
+          ./conductor version
+
   # Prove the portability goal: the binary cross-compiles to the target matrix.
   cross-compile:
     runs-on: ubuntu-latest
