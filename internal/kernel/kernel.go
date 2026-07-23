@@ -78,9 +78,20 @@ func New(cfg *config.Config, log *slog.Logger) (*Kernel, error) {
 		return nil, err
 	}
 
+	// Workflow-run persistence reuses the trace store when it also implements
+	// RunStore (the SQLite module does), so runs land in the same database with
+	// no extra config slot. When the trace store is nil or run-incapable, runs
+	// simply aren't recorded and the history endpoints report 501.
+	var runs ports.RunStore
+	if rs, ok := traces.(ports.RunStore); ok {
+		runs = rs
+		workflows.PersistTo(rs)
+	}
+
 	k.server = httpapi.New(httpapi.Config{
 		Engine:    engine,
 		Traces:    traces,
+		Runs:      runs,
 		Workflows: workflows,
 		APIKey:    cfg.Server.APIKey,
 		Summary:   configSummary(cfg),
@@ -91,6 +102,7 @@ func New(cfg *config.Config, log *slog.Logger) (*Kernel, error) {
 		"providers", providers.Len(),
 		"router", cfg.Router.Use,
 		"traces", traces != nil,
+		"run_store", runs != nil,
 		"workflows", workflows.Len(),
 		"address", cfg.Server.Address)
 	return k, nil

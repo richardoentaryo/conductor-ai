@@ -25,6 +25,7 @@ const traceHeader = "X-Conductor-Trace-Id"
 type Server struct {
 	engine    *pipeline.Engine
 	traces    ports.TraceStore  // may be nil when persistence is not configured
+	runs      ports.RunStore    // may be nil when run persistence is not configured
 	workflows *workflow.Service // may be nil / empty when no workflows configured
 	apiKey    string
 	summary   ConfigSummary // redacted, read-only view of the active config
@@ -35,6 +36,7 @@ type Server struct {
 type Config struct {
 	Engine    *pipeline.Engine
 	Traces    ports.TraceStore
+	Runs      ports.RunStore
 	Workflows *workflow.Service
 	APIKey    string
 	Summary   ConfigSummary
@@ -79,6 +81,7 @@ func New(cfg Config) *Server {
 	return &Server{
 		engine:    cfg.Engine,
 		traces:    cfg.Traces,
+		runs:      cfg.Runs,
 		workflows: cfg.Workflows,
 		apiKey:    cfg.APIKey,
 		summary:   cfg.Summary,
@@ -97,6 +100,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/workflows", s.requireAuth(s.handleListWorkflows))
 	mux.HandleFunc("GET /v1/workflows/{name}", s.requireAuth(s.handleGetWorkflow))
 	mux.HandleFunc("POST /v1/workflows/{name}/run", s.requireAuth(s.handleRunWorkflow))
+	mux.HandleFunc("GET /v1/workflow-runs/{id}", s.requireAuth(s.handleGetRun))
+	mux.HandleFunc("GET /v1/workflow-runs", s.requireAuth(s.handleListRuns))
 
 	// Serve the embedded control-plane dashboard at the root. The "/" pattern is
 	// the least specific subtree, so the explicit "/healthz" and "/v1/..." routes
@@ -307,6 +312,47 @@ func (s *Server) handleRunWorkflow(w http.ResponseWriter, r *http.Request) {
 	// A run that executed but failed is still a valid, fully-formed result; the
 	// caller inspects run.status. We return 200 with the run either way.
 	writeJSON(w, http.StatusOK, run)
+}
+
+func (s *Server) handleGetRun(w http.ResponseWriter, r *http.Request) {
+	if s.runs == nil {
+		writeError(w, http.StatusNotImplemented, "not_configured", "no run store configured")
+		return
+	}
+	id := r.PathValue("id")
+	run, found, err := s.runs.GetRun(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error", err.Error())
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "not_found", "run "+id+" not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
+func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
+	if s.runs == nil {
+		writeError(w, http.StatusNotImplemented, "not_configured", "no run store configured")
+		return
+	}
+	limit := 20
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	// Cap page size so a mistaken client can't request an unbounded result set.
+	if limit > 500 {
+		limit = 500
+	}
+	list, err := s.runs.ListRuns(r.Context(), limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "server_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": list})
 }
 
 // --- middleware ----------------------------------------------------------

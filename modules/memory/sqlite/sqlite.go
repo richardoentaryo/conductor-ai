@@ -29,6 +29,7 @@ func init() { registry.Register(&Store{}) }
 var (
 	_ ports.TraceStore   = (*Store)(nil)
 	_ ports.PromptStore  = (*Store)(nil)
+	_ ports.RunStore     = (*Store)(nil)
 	_ ports.CleanerUpper = (*Store)(nil)
 )
 
@@ -145,6 +146,68 @@ func (s *Store) List(ctx context.Context, limit int) ([]ports.Trace, error) {
 			return nil, fmt.Errorf("memory.sqlite: scan trace: %w", err)
 		}
 		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// --- RunStore ------------------------------------------------------------
+
+// SaveRun persists a workflow run, marshaling per-node detail to a JSON column.
+func (s *Store) SaveRun(ctx context.Context, r ports.WorkflowRun) error {
+	nodes, err := json.Marshal(r.Nodes)
+	if err != nil {
+		return fmt.Errorf("memory.sqlite: marshal nodes: %w", err)
+	}
+	const q = `INSERT OR REPLACE INTO workflow_runs
+        (id, workflow, created, status, error, prompt_tokens, completion_tokens,
+         total_tokens, cost_usd, latency_ms, nodes_json)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+	_, err = s.db.ExecContext(ctx, q,
+		r.ID, r.Workflow, r.CreatedUnix, string(r.Status), nullStr(r.Error),
+		r.Usage.PromptTokens, r.Usage.CompletionTokens, r.Usage.TotalTokens,
+		r.CostUSD, r.LatencyMS, string(nodes))
+	if err != nil {
+		return fmt.Errorf("memory.sqlite: save run %q: %w", r.ID, err)
+	}
+	return nil
+}
+
+// GetRun returns a workflow run by ID.
+func (s *Store) GetRun(ctx context.Context, id string) (ports.WorkflowRun, bool, error) {
+	const q = `SELECT id, workflow, created, status, error, prompt_tokens,
+        completion_tokens, total_tokens, cost_usd, latency_ms, nodes_json
+        FROM workflow_runs WHERE id = ?`
+	r, err := scanRun(s.db.QueryRowContext(ctx, q, id))
+	if err == sql.ErrNoRows {
+		return ports.WorkflowRun{}, false, nil
+	}
+	if err != nil {
+		return ports.WorkflowRun{}, false, fmt.Errorf("memory.sqlite: get run %q: %w", id, err)
+	}
+	return r, true, nil
+}
+
+// ListRuns returns the most recent workflow runs, newest first.
+func (s *Store) ListRuns(ctx context.Context, limit int) ([]ports.WorkflowRun, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	const q = `SELECT id, workflow, created, status, error, prompt_tokens,
+        completion_tokens, total_tokens, cost_usd, latency_ms, nodes_json
+        FROM workflow_runs ORDER BY created DESC LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, limit)
+	if err != nil {
+		return nil, fmt.Errorf("memory.sqlite: list runs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ports.WorkflowRun
+	for rows.Next() {
+		r, err := scanRun(rows)
+		if err != nil {
+			return nil, fmt.Errorf("memory.sqlite: scan run: %w", err)
+		}
+		out = append(out, r)
 	}
 	return out, rows.Err()
 }

@@ -138,3 +138,35 @@ func TestService_MissingInput(t *testing.T) {
 		t.Fatal("expected error for unknown workflow")
 	}
 }
+
+// fakeRunStore records saved runs; other methods are unused in these tests.
+type fakeRunStore struct{ saved []ports.WorkflowRun }
+
+func (f *fakeRunStore) ConductorModule() ports.ModuleInfo { return ports.ModuleInfo{} }
+func (f *fakeRunStore) SaveRun(_ context.Context, r ports.WorkflowRun) error {
+	f.saved = append(f.saved, r)
+	return nil
+}
+func (f *fakeRunStore) GetRun(context.Context, string) (ports.WorkflowRun, bool, error) {
+	return ports.WorkflowRun{}, false, nil
+}
+func (f *fakeRunStore) ListRuns(context.Context, int) ([]ports.WorkflowRun, error) { return nil, nil }
+
+// A completed run is persisted when a run store is wired via PersistTo.
+func TestService_PersistsRun(t *testing.T) {
+	wf := ports.Workflow{Name: "w", Nodes: []ports.Node{llm("a", "hi")}}
+	svc, err := NewService([]ports.Workflow{wf}, testEngine(&fakeCompleter{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &fakeRunStore{}
+	svc.PersistTo(store)
+
+	run, err := svc.Run(context.Background(), "w", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(store.saved) != 1 || store.saved[0].ID != run.ID {
+		t.Fatalf("expected run %q persisted, got %+v", run.ID, store.saved)
+	}
+}

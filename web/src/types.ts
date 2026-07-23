@@ -37,6 +37,54 @@ export interface Trace {
   latency_ms: number;
 }
 
+// --- Workflows (Phase 2) --------------------------------------------------
+// Mirror core/ports/workflow.go json tags.
+
+export interface WorkflowNode {
+  id: string;
+  type?: string;
+  prompt: string;
+  system?: string;
+  model: string;
+  depends_on?: string[];
+  retries?: number;
+  timeout_seconds?: number;
+}
+
+export interface Workflow {
+  name: string;
+  description?: string;
+  inputs?: string[];
+  nodes: WorkflowNode[];
+}
+
+export type RunStatus = "success" | "failed";
+
+export interface NodeResult {
+  node_id: string;
+  status: AttemptStatus;
+  output?: string;
+  provider?: string;
+  trace_id?: string;
+  attempts: number;
+  usage: Usage;
+  cost_usd: number;
+  latency_ms: number;
+  error?: string;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflow: string;
+  created: number;
+  status: RunStatus;
+  nodes: NodeResult[] | null;
+  usage: Usage;
+  cost_usd: number;
+  latency_ms: number;
+  error?: string;
+}
+
 export interface ModuleSummary {
   name: string;
   use: string;

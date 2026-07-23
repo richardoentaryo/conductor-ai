@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 
 	"github.com/conductor-ai/conductor/core/ports"
@@ -14,7 +15,15 @@ type Service struct {
 	engine *Engine
 	defs   map[string]ports.Workflow
 	names  []string // sorted, for stable listing
+
+	// runs, when set, persists every completed run. Nil when no run store is
+	// configured (the workflow-runs history endpoints then report 501).
+	runs ports.RunStore
 }
+
+// PersistTo wires an optional run store so each completed run is recorded. Called
+// by the kernel when the trace store also implements ports.RunStore.
+func (s *Service) PersistTo(rs ports.RunStore) { s.runs = rs }
 
 // NewService validates every definition and indexes it by name. It fails if two
 // workflows share a name or any definition is structurally invalid — surfacing
@@ -66,5 +75,13 @@ func (s *Service) Run(ctx context.Context, name string, inputs map[string]string
 			return ports.WorkflowRun{}, fmt.Errorf("workflow %q: missing required input %q", name, want)
 		}
 	}
-	return s.engine.Run(ctx, wf, inputs), nil
+	run := s.engine.Run(ctx, wf, inputs)
+	// Persist best-effort: a storage failure must not fail an otherwise-complete
+	// run — the caller already holds the full result in the response.
+	if s.runs != nil {
+		if err := s.runs.SaveRun(ctx, run); err != nil {
+			slog.Default().Error("workflow: persist run failed", "run", run.ID, "err", err)
+		}
+	}
+	return run, nil
 }

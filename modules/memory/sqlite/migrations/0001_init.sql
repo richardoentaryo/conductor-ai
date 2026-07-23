@@ -33,3 +33,22 @@ CREATE TABLE IF NOT EXISTS prompts (
     created     INTEGER NOT NULL,
     PRIMARY KEY (name, version)
 );
+
+-- Workflow runs. Mirrors the traces layout: per-node detail is a JSON array in
+-- `nodes_json`; aggregate token/cost/latency are denormalized so listing stays
+-- cheap without parsing every blob.
+CREATE TABLE IF NOT EXISTS workflow_runs (
+    id                TEXT PRIMARY KEY,
+    workflow          TEXT NOT NULL,
+    created           INTEGER NOT NULL,
+    status            TEXT NOT NULL,
+    error             TEXT,
+    prompt_tokens     INTEGER NOT NULL,
+    completion_tokens INTEGER NOT NULL,
+    total_tokens      INTEGER NOT NULL,
+    cost_usd          REAL NOT NULL,
+    latency_ms        INTEGER NOT NULL,
+    nodes_json        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_created ON workflow_runs (created DESC);

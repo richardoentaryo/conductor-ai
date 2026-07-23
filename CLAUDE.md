@@ -28,7 +28,15 @@ DAGs — LLM nodes, parallel layers, `{{inputs.x}}`/`{{nodes.id.output}}` thread
 per-node retry/timeout. Each node runs through the pipeline (inherits fallback/
 trace/cost). Config `workflows.dir`; endpoints `GET /v1/workflows[/{name}]`,
 `POST /v1/workflows/{name}/run` → full `WorkflowRun`. Example: `workflows/summarize.yaml`.
-NOT yet: run persistence, workflows UI tab, tool/condition node types.
+
+**Run persistence + Workflows UI: DONE.** New optional `RunStore` port; the
+sqlite module implements it too, so runs persist to the **same `conductor.db`**
+(table `workflow_runs`) with **no new config slot** — kernel type-asserts the
+trace store to `RunStore` and, when it matches, wires `Service.PersistTo` +
+serves history. Endpoints `GET /v1/workflow-runs[/{id}]` (501 when no run store,
+like traces). `WorkflowsView` is now live: definition picker, per-input run form,
+run history table with click-to-expand node breakdown.
+NOT yet: tool/condition node types.
 
 Defined-but-unwired ports: `MemoryStore`, `Tool` (no impl); `PromptStore` (impl in
 sqlite, no HTTP endpoint). Repo is **public**, **MIT** licensed.
@@ -84,10 +92,9 @@ Add a module: implement the port, `registry.Register` in `init()`, blank-import 
   serves a 404 at `/` (expected — no UI without the npm build).
 
 ## Next steps
-Phase 2 lean DAG shipped. Next: 1. **Persist workflow runs** (SQLite +
-`GET /v1/workflow-runs/{id}`) and light up the **Workflows UI tab**.
-2. Add **tool/condition node types** + wire first `Tool` (filesystem).
-3. Expose `PromptStore` via HTTP. 4. Cost/latency-based router module.
+Run persistence + Workflows UI shipped. Next:
+1. Add **tool/condition node types** + wire first `Tool` (filesystem).
+2. Expose `PromptStore` via HTTP. 3. Cost/latency-based router module.
 User prefers a short design/plan before big features (plan mode).
 
 ## Ops

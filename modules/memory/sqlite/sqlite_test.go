@@ -62,6 +62,50 @@ func TestTraceRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRunRoundTrip(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+
+	run := ports.WorkflowRun{
+		ID: "wfr_1", Workflow: "summarize", CreatedUnix: 200, Status: ports.RunFailed,
+		Error: "one or more nodes failed",
+		Nodes: []ports.NodeResult{
+			{NodeID: "draft", Status: ports.AttemptSuccess, Output: "hi", Provider: "primary",
+				TraceID: "req_a", Attempts: 1, CostUSD: 0.001,
+				Usage: ports.Usage{PromptTokens: 2, CompletionTokens: 3, TotalTokens: 5}},
+			{NodeID: "polish", Status: ports.AttemptError, Attempts: 2, Error: "boom"},
+		},
+		Usage:   ports.Usage{PromptTokens: 2, CompletionTokens: 3, TotalTokens: 5},
+		CostUSD: 0.001, LatencyMS: 99,
+	}
+	if err := s.SaveRun(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+
+	got, found, err := s.GetRun(ctx, "wfr_1")
+	if err != nil || !found {
+		t.Fatalf("get run failed: found=%v err=%v", found, err)
+	}
+	if got.Status != ports.RunFailed || got.Error != "one or more nodes failed" {
+		t.Fatalf("run fields mismatch: %+v", got)
+	}
+	if len(got.Nodes) != 2 || got.Nodes[0].TraceID != "req_a" || got.Nodes[1].Error != "boom" {
+		t.Fatalf("nodes not round-tripped: %+v", got.Nodes)
+	}
+	if got.CostUSD != 0.001 || got.Usage.TotalTokens != 5 {
+		t.Fatalf("aggregate mismatch: %+v", got)
+	}
+
+	if _, found, _ = s.GetRun(ctx, "missing"); found {
+		t.Fatal("expected not found for missing run id")
+	}
+
+	list, err := s.ListRuns(ctx, 10)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("list runs failed: n=%d err=%v", len(list), err)
+	}
+}
+
 func TestPromptVersioning(t *testing.T) {
 	s := newStore(t)
 	ctx := context.Background()

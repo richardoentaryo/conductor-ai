@@ -1,5 +1,7 @@
 package ports
 
+import "context"
+
 // This file defines the Phase 2 Workflow contracts. A Workflow is a DAG of nodes
 // executed by the workflow engine (core/workflow); each LLM node runs through the
 // existing request pipeline, so nodes inherit routing, fallback, tracing, and
@@ -71,6 +73,21 @@ type NodeResult struct {
 	CostUSD   float64 `json:"cost_usd"`
 	LatencyMS int64   `json:"latency_ms"`
 	Error     string  `json:"error,omitempty"`
+}
+
+// RunStore persists completed workflow runs for history and inspection. Like
+// TraceStore it is an optional port: when unconfigured the gateway reports the
+// workflow-runs endpoints as not implemented. The SQLite module implements this
+// alongside TraceStore, so runs land in the same database as request traces.
+type RunStore interface {
+	Module
+
+	// SaveRun persists a completed run. Safe to call from request goroutines.
+	SaveRun(ctx context.Context, r WorkflowRun) error
+	// GetRun returns a run by ID. found is false (nil error) when absent.
+	GetRun(ctx context.Context, id string) (r WorkflowRun, found bool, err error)
+	// ListRuns returns the most recent runs, newest first, up to limit.
+	ListRuns(ctx context.Context, limit int) ([]WorkflowRun, error)
 }
 
 // WorkflowRun is the full record of one workflow execution.

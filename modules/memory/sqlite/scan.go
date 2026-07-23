@@ -45,6 +45,32 @@ func scanTrace(sc rowScanner) (ports.Trace, error) {
 	return t, nil
 }
 
+// scanRun reads one workflow-run row (column order must match the SELECTs above).
+func scanRun(sc rowScanner) (ports.WorkflowRun, error) {
+	var (
+		r         ports.WorkflowRun
+		status    string
+		errStr    sql.NullString
+		nodesJSON string
+	)
+	err := sc.Scan(
+		&r.ID, &r.Workflow, &r.CreatedUnix, &status, &errStr,
+		&r.Usage.PromptTokens, &r.Usage.CompletionTokens, &r.Usage.TotalTokens,
+		&r.CostUSD, &r.LatencyMS, &nodesJSON,
+	)
+	if err != nil {
+		return ports.WorkflowRun{}, err
+	}
+	r.Status = ports.RunStatus(status)
+	r.Error = errStr.String
+	if nodesJSON != "" {
+		if err := json.Unmarshal([]byte(nodesJSON), &r.Nodes); err != nil {
+			return ports.WorkflowRun{}, err
+		}
+	}
+	return r, nil
+}
+
 // scanPrompt reads one prompt row.
 func scanPrompt(sc rowScanner) (ports.Prompt, error) {
 	var (
