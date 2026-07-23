@@ -31,6 +31,18 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # Build the dashboard first so the Go build/test embed the real frontend
+      # (internal/webui/dist) rather than the committed placeholder.
+      - name: Build UI
+        run: make ui-build
+
       - name: Verify formatting (gofmt)
         run: |
           unformatted="$(gofmt -l .)"

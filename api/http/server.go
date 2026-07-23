@@ -14,6 +14,7 @@ import (
 
 	"github.com/conductor-ai/conductor/core/pipeline"
 	"github.com/conductor-ai/conductor/core/ports"
+	"github.com/conductor-ai/conductor/internal/webui"
 )
 
 // traceHeader carries the request/trace ID back to the client on every response.
@@ -21,18 +22,50 @@ const traceHeader = "X-Conductor-Trace-Id"
 
 // Server wires the pipeline and stores into HTTP handlers.
 type Server struct {
-	engine *pipeline.Engine
-	traces ports.TraceStore // may be nil when persistence is not configured
-	apiKey string
-	log    *slog.Logger
+	engine  *pipeline.Engine
+	traces  ports.TraceStore // may be nil when persistence is not configured
+	apiKey  string
+	summary ConfigSummary // redacted, read-only view of the active config
+	log     *slog.Logger
 }
 
 // Config configures a Server.
 type Config struct {
-	Engine *pipeline.Engine
-	Traces ports.TraceStore
-	APIKey string
-	Logger *slog.Logger
+	Engine  *pipeline.Engine
+	Traces  ports.TraceStore
+	APIKey  string
+	Summary ConfigSummary
+	Logger  *slog.Logger
+}
+
+// ConfigSummary is a redacted, read-only snapshot of the active configuration,
+// safe to serve over HTTP. It deliberately omits every module's Settings map:
+// those may hold secrets (provider API keys), so the wire type has no field to
+// carry them and they can never leak through this endpoint.
+type ConfigSummary struct {
+	ServerAddress  string          `json:"server_address"`
+	RequestTimeout int             `json:"request_timeout_seconds"`
+	Providers      []ModuleSummary `json:"providers"`
+	Router         ModuleSummary   `json:"router"`
+	TraceStore     StoreSummary    `json:"trace_store"`
+	PromptStore    StoreSummary    `json:"prompt_store"`
+	// Note states the read-only contract to any UI so it never renders edit
+	// affordances the backend does not implement.
+	Note string `json:"note"`
+}
+
+// ModuleSummary identifies one activated module by its instance name and the
+// registered module-type ID it uses — never its settings.
+type ModuleSummary struct {
+	Name string `json:"name"`
+	Use  string `json:"use"`
+}
+
+// StoreSummary reports whether an optional store slot is configured and, if so,
+// which module implements it.
+type StoreSummary struct {
+	Configured bool   `json:"configured"`
+	Use        string `json:"use,omitempty"`
 }
 
 // New builds a Server.
@@ -40,7 +73,13 @@ func New(cfg Config) *Server {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	return &Server{engine: cfg.Engine, traces: cfg.Traces, apiKey: cfg.APIKey, log: cfg.Logger}
+	return &Server{
+		engine:  cfg.Engine,
+		traces:  cfg.Traces,
+		apiKey:  cfg.APIKey,
+		summary: cfg.Summary,
+		log:     cfg.Logger,
+	}
 }
 
 // Handler returns the fully wired HTTP handler with middleware applied.
@@ -50,6 +89,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/chat/completions", s.requireAuth(s.handleChat))
 	mux.HandleFunc("GET /v1/traces/{id}", s.requireAuth(s.handleGetTrace))
 	mux.HandleFunc("GET /v1/traces", s.requireAuth(s.handleListTraces))
+	mux.HandleFunc("GET /v1/config", s.requireAuth(s.handleGetConfig))
+
+	// Serve the embedded control-plane dashboard at the root. The "/" pattern is
+	// the least specific subtree, so the explicit "/healthz" and "/v1/..." routes
+	// above always win for their paths; everything else falls through to the SPA's
+	// static assets.
+	mux.Handle("/", http.FileServer(http.FS(webui.Assets())))
 
 	return s.recoverer(s.logger(mux))
 }
@@ -180,12 +226,24 @@ func (s *Server) handleListTraces(w http.ResponseWriter, r *http.Request) {
 			limit = n
 		}
 	}
+	// Cap the page size so a hostile or mistaken client can't ask the store for an
+	// unbounded result set; the dashboard never needs more than this.
+	if limit > 500 {
+		limit = 500
+	}
 	list, err := s.traces.List(r.Context(), limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": list})
+}
+
+// handleGetConfig returns the redacted, read-only configuration snapshot. It
+// serves the precomputed summary built at composition time, which never carries
+// module Settings, so no secret can be exposed here.
+func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.summary)
 }
 
 // --- middleware ----------------------------------------------------------

@@ -71,10 +71,11 @@ func New(cfg *config.Config, log *slog.Logger) (*Kernel, error) {
 	})
 
 	k.server = httpapi.New(httpapi.Config{
-		Engine: engine,
-		Traces: traces,
-		APIKey: cfg.Server.APIKey,
-		Logger: log,
+		Engine:  engine,
+		Traces:  traces,
+		APIKey:  cfg.Server.APIKey,
+		Summary: configSummary(cfg),
+		Logger:  log,
 	})
 
 	log.Info("kernel composed",
@@ -83,6 +84,32 @@ func New(cfg *config.Config, log *slog.Logger) (*Kernel, error) {
 		"traces", traces != nil,
 		"address", cfg.Server.Address)
 	return k, nil
+}
+
+// configSummary distills the parsed config into the redacted view the gateway
+// serves at /v1/config. It copies only non-secret shape — addresses, module
+// names/IDs, and which optional stores are wired — and deliberately drops every
+// module's Settings block so provider API keys can never reach the wire.
+func configSummary(cfg *config.Config) httpapi.ConfigSummary {
+	providers := make([]httpapi.ModuleSummary, 0, len(cfg.Providers))
+	for _, p := range cfg.Providers {
+		providers = append(providers, httpapi.ModuleSummary{Name: p.Name, Use: p.Use})
+	}
+
+	summary := httpapi.ConfigSummary{
+		ServerAddress:  cfg.Server.Address,
+		RequestTimeout: cfg.Server.RequestTimeout,
+		Providers:      providers,
+		Router:         httpapi.ModuleSummary{Name: cfg.Router.Name, Use: cfg.Router.Use},
+		Note:           "read-only — edit config.yaml and restart to change",
+	}
+	if cfg.TraceStore != nil {
+		summary.TraceStore = httpapi.StoreSummary{Configured: true, Use: cfg.TraceStore.Use}
+	}
+	if cfg.PromptStore != nil {
+		summary.PromptStore = httpapi.StoreSummary{Configured: true, Use: cfg.PromptStore.Use}
+	}
+	return summary
 }
 
 // buildProviders instantiates every configured provider instance.

@@ -10,12 +10,22 @@ LDFLAGS := -X main.version=$(VERSION)
 
 export CGO_ENABLED := 0
 
-.PHONY: all build install run test fmt vet check clean
+.PHONY: all build install run test fmt vet check clean ui-build
 
 all: check build
 
-## build: compile the static binary into ./conductor
-build:
+## ui-build: build the embedded control-plane dashboard (writes internal/webui/dist)
+# The Vite config emits directly into internal/webui/dist, which the Go binary
+# embeds via go:embed — so this must run before any `go build` that ships the UI.
+# The generated output (index.html + assets) is removed first so stale hashed
+# chunks never linger; the tracked placeholder.html is preserved (Vite does not
+# empty the dir), keeping go:embed happy on a clean checkout.
+ui-build:
+	rm -rf internal/webui/dist/index.html internal/webui/dist/assets
+	cd web && npm ci && npm run build
+
+## build: compile the static binary into ./conductor (embeds the freshly built UI)
+build: ui-build
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) $(PKG)
 
 ## install: install `conductor` into $GOBIN (or $GOPATH/bin)
@@ -31,8 +41,8 @@ install:
 	     echo "      or just run:  ./conductor start   (after 'make build')" ;; \
 	esac
 
-## run: run the built-in demo (zero-config) via `go run`
-run:
+## run: run the built-in demo (zero-config) via `go run` (embeds the freshly built UI)
+run: ui-build
 	go run $(PKG) start
 
 ## test: race-checked test suite with coverage
@@ -54,3 +64,4 @@ check: vet test
 ## clean: remove build output and local runtime state
 clean:
 	rm -f $(BINARY) *.db *.db-shm *.db-wal
+	rm -rf internal/webui/dist/index.html internal/webui/dist/assets

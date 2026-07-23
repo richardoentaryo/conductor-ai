@@ -15,13 +15,22 @@ is the key asset. Go, no CGO, no other runtime.
 Caddy-style module registry, zero-config `conductor start`, CI + GoReleaser.
 Modules: `providers.mock|openai|ollama`, `router.static`, `memory.sqlite`.
 
+**Control-plane UI Stage 1 done** (uncommitted at time of writing → committed): an
+embedded React/Vite/Tailwind dashboard served at `/` via `go:embed`
+(`internal/webui`). Surfaces: Traces list + cost tiles, Trace detail (fallback
+chain), read-only Config view (new `GET /v1/config`, secrets redacted), and a
+"Workflows — coming soon" placeholder (Phase 2, no backend yet). Frontend lives in
+`web/` (Node build-time only; `conductor start` UX unchanged). Build via
+`make ui-build` (build/run depend on it; CI + GoReleaser run it before Go steps).
+
 Defined-but-unwired ports: `MemoryStore`, `Tool` (no impl); `PromptStore` (impl in
 sqlite, no HTTP endpoint). Repo is **public**, **MIT** licensed. Likely next:
-**Phase 2 workflow/DAG engine**.
+**Phase 2 workflow/DAG engine** (would light up the Workflows UI tab).
 
 ## Build / run / test
 Needs Go 1.24+. Use the `Makefile`:
-- `make build` → `./conductor` (static, CGO-free) · `make run` = zero-config demo
+- `make build` → `./conductor` (static, CGO-free; runs `ui-build` first) · `make run` = zero-config demo
+- `make ui-build` → `cd web && npm ci && npm run build` → bundle into `internal/webui/dist`
 - `make test` (race; sets CGO_ENABLED=1) · `make check` = vet+gofmt+tests (CI enforces)
 - `./conductor start` with no config.yaml → embedded keyless demo (mock failover)
 - Config: YAML + `${ENV}` expansion (secrets via env). See `config.example.yaml`.
@@ -60,6 +69,11 @@ Add a module: implement the port, `registry.Register` in `init()`, blank-import 
   `PutPrompt/GetPrompt/ListPrompts`) — Go forbids duplicate method names.
 - `TraceStore` may be nil (unconfigured); engine/gateway handle it (`/v1/traces*` → 501).
 - Demo writes `conductor.db*` in cwd (gitignored).
+- UI embed dir is `internal/webui/dist`, NOT `web/dist` — `go:embed` can't reach a
+  sibling dir. Vite outputs there. Only `dist/placeholder.html` is tracked (keeps
+  bare `go build` compiling without npm); generated `index.html`+`assets/` are
+  gitignored so the tree stays clean for GoReleaser. Bare build w/o `make ui-build`
+  serves a 404 at `/` (expected — no UI without the npm build).
 
 ## Next steps
 1. Decide repo visibility + add LICENSE. 2. **Phase 2 workflow/DAG engine**: a

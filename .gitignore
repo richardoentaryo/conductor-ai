@@ -6,6 +6,19 @@
 # GoReleaser
 /dist/
 
+# Frontend (web/) build toolchain — source is tracked, install/cache dirs are not.
+web/node_modules/
+web/.vite/
+web/*.tsbuildinfo
+node_modules/
+
+# Embedded dashboard bundle: the build output (index.html + assets/) is generated
+# by `make ui-build` and need not be committed. Only placeholder.html is tracked —
+# it keeps the go:embed directory non-empty so a bare `go build ./...` compiles
+# before npm ever runs, and Vite never overwrites it (so release trees stay clean).
+/internal/webui/dist/*
+!/internal/webui/dist/placeholder.html
+
 # Local runtime state
 *.db
 *.db-shm
