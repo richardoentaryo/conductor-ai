@@ -36,6 +36,18 @@ trace store to `RunStore` and, when it matches, wires `Service.PersistTo` +
 serves history. Endpoints `GET /v1/workflow-runs[/{id}]` (501 when no run store,
 like traces). `WorkflowsView` is now live: definition picker, per-input run form,
 run history table with click-to-expand node breakdown.
+
+**Scheduler: DONE.** `core/scheduler` fires workflow runs on standard 5-field cron
+(`github.com/robfig/cron/v3`, parser-only + own tick loop, so timing is unit-tested
+with explicit times — no real waiting). Kernel-composed (mechanism, not a module),
+depends on a narrow `Runner` (workflow `Service`). Config `scheduler.jobs[]`
+(`name/workflow/cron/inputs`); validated at startup (bad cron / unknown workflow /
+dup name = boot fails). Skip-on-overlap, fire-forward (no backfill). Scheduled runs
+flow through the pipeline + persist like any run, tagged `trigger:"schedule"`
+(new `WorkflowRun.Trigger`, "api" default; sqlite `trigger` column w/ best-effort
+`ALTER` for old DBs). Endpoint `GET /v1/schedules` (jobs + next-fire + last-run);
+dashboard shows a Schedules card + "scheduled" tag in run history. Verified
+end-to-end (fires at minute boundary, persists, lists).
 NOT yet: tool/condition node types.
 
 Defined-but-unwired ports: `MemoryStore`, `Tool` (no impl); `PromptStore` (impl in
@@ -62,8 +74,8 @@ Add a module: implement the port, `registry.Register` in `init()`, blank-import 
 `cmd/conductor/modules.go`, rebuild. See `modules/providers/mock` for the pattern.
 
 ## Key decisions (don't silently reverse)
-- **Pure-Go deps only** (`yaml.v3`, `modernc.org/sqlite`) → CGO-free static binary.
-  Never swap in a CGO sqlite driver.
+- **Pure-Go deps only** (`yaml.v3`, `modernc.org/sqlite`, `robfig/cron/v3`) →
+  CGO-free static binary. Never swap in a CGO sqlite driver.
 - **Contract is gRPC-ready** (`core/ports/doc.go`): DTOs plain/serializable, methods
   RPC-shaped, so modules can later run out-of-process without kernel changes.
 - **Policy vs mechanism:** router picks order; pipeline does calling/timeout/fallback.
@@ -92,9 +104,12 @@ Add a module: implement the port, `registry.Register` in `init()`, blank-import 
   serves a 404 at `/` (expected — no UI without the npm build).
 
 ## Next steps
-Run persistence + Workflows UI shipped. Next:
-1. Add **tool/condition node types** + wire first `Tool` (filesystem).
-2. Expose `PromptStore` via HTTP. 3. Cost/latency-based router module.
+Scheduler shipped → **Phase 2 essentially complete** (workflow engine, dashboard,
+scheduler done; "more providers" partial: mock/openai/ollama/openaicompat). Next:
+1. More provider adapters (Anthropic/Bedrock/Gemini) to close Phase 2.
+2. Add **tool/condition node types** + wire first `Tool` (filesystem).
+3. Expose `PromptStore` via HTTP. 4. Cost/latency-based router module.
+Then Phase 3 (auth/RBAC, Postgres/Redis, OpenTelemetry).
 User prefers a short design/plan before big features (plan mode).
 
 ## Ops

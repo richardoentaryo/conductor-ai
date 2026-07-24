@@ -68,7 +68,7 @@ func TestRunRoundTrip(t *testing.T) {
 
 	run := ports.WorkflowRun{
 		ID: "wfr_1", Workflow: "summarize", CreatedUnix: 200, Status: ports.RunFailed,
-		Error: "one or more nodes failed",
+		Trigger: ports.TriggerSchedule, Error: "one or more nodes failed",
 		Nodes: []ports.NodeResult{
 			{NodeID: "draft", Status: ports.AttemptSuccess, Output: "hi", Provider: "primary",
 				TraceID: "req_a", Attempts: 1, CostUSD: 0.001,
@@ -88,6 +88,9 @@ func TestRunRoundTrip(t *testing.T) {
 	}
 	if got.Status != ports.RunFailed || got.Error != "one or more nodes failed" {
 		t.Fatalf("run fields mismatch: %+v", got)
+	}
+	if got.Trigger != ports.TriggerSchedule {
+		t.Fatalf("trigger not round-tripped: %q", got.Trigger)
 	}
 	if len(got.Nodes) != 2 || got.Nodes[0].TraceID != "req_a" || got.Nodes[1].Error != "boom" {
 		t.Fatalf("nodes not round-tripped: %+v", got.Nodes)

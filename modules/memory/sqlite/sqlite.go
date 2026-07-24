@@ -10,6 +10,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/conductor-ai/conductor/core/ports"
 	"github.com/conductor-ai/conductor/internal/registry"
@@ -71,6 +72,14 @@ func (s *Store) Provision(ctx context.Context, raw json.RawMessage) error {
 	}
 	if _, err := db.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("memory.sqlite: apply schema: %w", err)
+	}
+	// Additive migration for databases created before the trigger column existed.
+	// SQLite has no "ADD COLUMN IF NOT EXISTS", so we run it unconditionally and
+	// swallow the duplicate-column error on already-migrated files. New databases
+	// already have the column from the CREATE TABLE above and hit this error too.
+	if _, err := db.ExecContext(ctx, `ALTER TABLE workflow_runs ADD COLUMN trigger TEXT`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("memory.sqlite: migrate workflow_runs.trigger: %w", err)
 	}
 	s.db = db
 	return nil
@@ -159,13 +168,13 @@ func (s *Store) SaveRun(ctx context.Context, r ports.WorkflowRun) error {
 		return fmt.Errorf("memory.sqlite: marshal nodes: %w", err)
 	}
 	const q = `INSERT OR REPLACE INTO workflow_runs
-        (id, workflow, created, status, error, prompt_tokens, completion_tokens,
-         total_tokens, cost_usd, latency_ms, nodes_json)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+        (id, workflow, created, status, trigger, error, prompt_tokens,
+         completion_tokens, total_tokens, cost_usd, latency_ms, nodes_json)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
 	_, err = s.db.ExecContext(ctx, q,
-		r.ID, r.Workflow, r.CreatedUnix, string(r.Status), nullStr(r.Error),
-		r.Usage.PromptTokens, r.Usage.CompletionTokens, r.Usage.TotalTokens,
-		r.CostUSD, r.LatencyMS, string(nodes))
+		r.ID, r.Workflow, r.CreatedUnix, string(r.Status), nullStr(r.Trigger),
+		nullStr(r.Error), r.Usage.PromptTokens, r.Usage.CompletionTokens,
+		r.Usage.TotalTokens, r.CostUSD, r.LatencyMS, string(nodes))
 	if err != nil {
 		return fmt.Errorf("memory.sqlite: save run %q: %w", r.ID, err)
 	}
@@ -174,7 +183,7 @@ func (s *Store) SaveRun(ctx context.Context, r ports.WorkflowRun) error {
 
 // GetRun returns a workflow run by ID.
 func (s *Store) GetRun(ctx context.Context, id string) (ports.WorkflowRun, bool, error) {
-	const q = `SELECT id, workflow, created, status, error, prompt_tokens,
+	const q = `SELECT id, workflow, created, status, trigger, error, prompt_tokens,
         completion_tokens, total_tokens, cost_usd, latency_ms, nodes_json
         FROM workflow_runs WHERE id = ?`
 	r, err := scanRun(s.db.QueryRowContext(ctx, q, id))
@@ -192,7 +201,7 @@ func (s *Store) ListRuns(ctx context.Context, limit int) ([]ports.WorkflowRun, e
 	if limit <= 0 {
 		limit = 20
 	}
-	const q = `SELECT id, workflow, created, status, error, prompt_tokens,
+	const q = `SELECT id, workflow, created, status, trigger, error, prompt_tokens,
         completion_tokens, total_tokens, cost_usd, latency_ms, nodes_json
         FROM workflow_runs ORDER BY created DESC LIMIT ?`
 	rows, err := s.db.QueryContext(ctx, q, limit)

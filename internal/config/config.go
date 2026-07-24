@@ -33,6 +33,7 @@ type Config struct {
 	TraceStore  *ModuleConfig    `yaml:"trace_store"`
 	PromptStore *ModuleConfig    `yaml:"prompt_store"`
 	Workflows   *WorkflowsConfig `yaml:"workflows"`
+	Scheduler   *SchedulerConfig `yaml:"scheduler"`
 }
 
 // WorkflowsConfig configures the Phase 2 workflow engine.
@@ -40,6 +41,27 @@ type WorkflowsConfig struct {
 	// Dir is a directory of *.yaml workflow definitions loaded at startup. Empty
 	// or missing disables workflows.
 	Dir string `yaml:"dir"`
+}
+
+// SchedulerConfig configures the Phase 2 scheduler: cron-triggered workflow runs.
+type SchedulerConfig struct {
+	// Jobs is the set of scheduled workflow runs. Empty or missing disables the
+	// scheduler.
+	Jobs []JobConfig `yaml:"jobs"`
+}
+
+// JobConfig declares one scheduled job: run Workflow on the Cron schedule with
+// the given Inputs.
+type JobConfig struct {
+	// Name is a unique, human-readable identifier for the job (used in logs and
+	// the /v1/schedules view).
+	Name string `yaml:"name"`
+	// Workflow is the name of the workflow to run; it must exist at startup.
+	Workflow string `yaml:"workflow"`
+	// Cron is a standard 5-field cron expression (minute hour dom month dow).
+	Cron string `yaml:"cron"`
+	// Inputs are passed verbatim to the workflow on every fire.
+	Inputs map[string]string `yaml:"inputs"`
 }
 
 // ServerConfig holds API gateway settings.

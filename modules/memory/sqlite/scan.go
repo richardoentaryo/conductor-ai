@@ -50,11 +50,12 @@ func scanRun(sc rowScanner) (ports.WorkflowRun, error) {
 	var (
 		r         ports.WorkflowRun
 		status    string
+		trigger   sql.NullString
 		errStr    sql.NullString
 		nodesJSON string
 	)
 	err := sc.Scan(
-		&r.ID, &r.Workflow, &r.CreatedUnix, &status, &errStr,
+		&r.ID, &r.Workflow, &r.CreatedUnix, &status, &trigger, &errStr,
 		&r.Usage.PromptTokens, &r.Usage.CompletionTokens, &r.Usage.TotalTokens,
 		&r.CostUSD, &r.LatencyMS, &nodesJSON,
 	)
@@ -62,6 +63,7 @@ func scanRun(sc rowScanner) (ports.WorkflowRun, error) {
 		return ports.WorkflowRun{}, err
 	}
 	r.Status = ports.RunStatus(status)
+	r.Trigger = trigger.String
 	r.Error = errStr.String
 	if nodesJSON != "" {
 		if err := json.Unmarshal([]byte(nodesJSON), &r.Nodes); err != nil {

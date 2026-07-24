@@ -60,6 +60,12 @@ const (
 	RunFailed  RunStatus = "failed"
 )
 
+// Trigger records what caused a run: a direct API call or the scheduler.
+const (
+	TriggerAPI      = "api"
+	TriggerSchedule = "schedule"
+)
+
 // NodeResult captures the outcome of executing one node.
 type NodeResult struct {
 	NodeID   string        `json:"node_id"`
@@ -92,11 +98,13 @@ type RunStore interface {
 
 // WorkflowRun is the full record of one workflow execution.
 type WorkflowRun struct {
-	ID          string       `json:"id"`
-	Workflow    string       `json:"workflow"`
-	CreatedUnix int64        `json:"created"`
-	Status      RunStatus    `json:"status"`
-	Nodes       []NodeResult `json:"nodes"`
+	ID          string    `json:"id"`
+	Workflow    string    `json:"workflow"`
+	CreatedUnix int64     `json:"created"`
+	Status      RunStatus `json:"status"`
+	// Trigger is what caused the run: "api" (default) or "schedule".
+	Trigger string       `json:"trigger,omitempty"`
+	Nodes   []NodeResult `json:"nodes"`
 	// Usage and CostUSD aggregate across all executed nodes.
 	Usage     Usage   `json:"usage"`
 	CostUSD   float64 `json:"cost_usd"`

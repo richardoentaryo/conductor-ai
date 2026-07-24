@@ -14,6 +14,7 @@ import (
 
 	"github.com/conductor-ai/conductor/core/pipeline"
 	"github.com/conductor-ai/conductor/core/ports"
+	"github.com/conductor-ai/conductor/core/scheduler"
 	"github.com/conductor-ai/conductor/core/workflow"
 	"github.com/conductor-ai/conductor/internal/webui"
 )
@@ -24,9 +25,10 @@ const traceHeader = "X-Conductor-Trace-Id"
 // Server wires the pipeline and stores into HTTP handlers.
 type Server struct {
 	engine    *pipeline.Engine
-	traces    ports.TraceStore  // may be nil when persistence is not configured
-	runs      ports.RunStore    // may be nil when run persistence is not configured
-	workflows *workflow.Service // may be nil / empty when no workflows configured
+	traces    ports.TraceStore     // may be nil when persistence is not configured
+	runs      ports.RunStore       // may be nil when run persistence is not configured
+	workflows *workflow.Service    // may be nil / empty when no workflows configured
+	scheduler *scheduler.Scheduler // may be nil / empty when no jobs configured
 	apiKey    string
 	summary   ConfigSummary // redacted, read-only view of the active config
 	log       *slog.Logger
@@ -38,6 +40,7 @@ type Config struct {
 	Traces    ports.TraceStore
 	Runs      ports.RunStore
 	Workflows *workflow.Service
+	Scheduler *scheduler.Scheduler
 	APIKey    string
 	Summary   ConfigSummary
 	Logger    *slog.Logger
@@ -83,6 +86,7 @@ func New(cfg Config) *Server {
 		traces:    cfg.Traces,
 		runs:      cfg.Runs,
 		workflows: cfg.Workflows,
+		scheduler: cfg.Scheduler,
 		apiKey:    cfg.APIKey,
 		summary:   cfg.Summary,
 		log:       cfg.Logger,
@@ -102,6 +106,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/workflows/{name}/run", s.requireAuth(s.handleRunWorkflow))
 	mux.HandleFunc("GET /v1/workflow-runs/{id}", s.requireAuth(s.handleGetRun))
 	mux.HandleFunc("GET /v1/workflow-runs", s.requireAuth(s.handleListRuns))
+	mux.HandleFunc("GET /v1/schedules", s.requireAuth(s.handleListSchedules))
 
 	// Serve the embedded control-plane dashboard at the root. The "/" pattern is
 	// the least specific subtree, so the explicit "/healthz" and "/v1/..." routes
@@ -353,6 +358,17 @@ func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": list})
+}
+
+// handleListSchedules returns the configured scheduled jobs with their next fire
+// time and last run. An empty list when the scheduler has no jobs — unlike the
+// stores this is never a 501, since a scheduler is always composed (just empty).
+func (s *Server) handleListSchedules(w http.ResponseWriter, _ *http.Request) {
+	if s.scheduler == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": s.scheduler.Jobs()})
 }
 
 // --- middleware ----------------------------------------------------------

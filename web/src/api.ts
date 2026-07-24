@@ -4,7 +4,7 @@
 // gateway is a pass-through when it runs keyless, so an empty key must not send
 // an empty Authorization header that would look like a failed auth attempt.
 
-import type { ConfigSummary, Trace, Workflow, WorkflowRun } from "./types";
+import type { ConfigSummary, Schedule, Trace, Workflow, WorkflowRun } from "./types";
 
 const API_KEY_STORAGE = "conductor.apiKey";
 
@@ -114,4 +114,8 @@ export function fetchRuns(limit: number): Promise<{ data: WorkflowRun[] | null }
 
 export function fetchRun(id: string): Promise<WorkflowRun> {
   return apiGet(`/v1/workflow-runs/${encodeURIComponent(id)}`);
+}
+
+export function fetchSchedules(): Promise<{ data: Schedule[] | null }> {
+  return apiGet("/v1/schedules");
 }

@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
     workflow          TEXT NOT NULL,
     created           INTEGER NOT NULL,
     status            TEXT NOT NULL,
+    trigger           TEXT,
     error             TEXT,
     prompt_tokens     INTEGER NOT NULL,
     completion_tokens INTEGER NOT NULL,

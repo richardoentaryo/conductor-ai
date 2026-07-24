@@ -5,8 +5,8 @@
 // is mostly form + tables over the /v1/workflows and /v1/workflow-runs APIs.
 
 import { useEffect, useMemo, useState } from "react";
-import { fetchWorkflows, runWorkflow, fetchRuns, ApiError } from "../api";
-import type { Workflow, WorkflowRun, NodeResult, AttemptStatus } from "../types";
+import { fetchWorkflows, runWorkflow, fetchRuns, fetchSchedules, ApiError } from "../api";
+import type { Workflow, WorkflowRun, NodeResult, AttemptStatus, Schedule } from "../types";
 import { usd, ms, timeAgo } from "../format";
 import { Card, StatusBadge, ErrorBanner, Spinner, Empty } from "../components/ui";
 
@@ -19,6 +19,7 @@ function runBadgeStatus(status: string): AttemptStatus {
 export default function WorkflowsView() {
   const [workflows, setWorkflows] = useState<Workflow[] | null>(null);
   const [runs, setRuns] = useState<WorkflowRun[] | null>(null);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notConfigured, setNotConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -52,9 +53,21 @@ export default function WorkflowsView() {
     }
   }
 
+  async function loadSchedules() {
+    try {
+      const res = await fetchSchedules();
+      setSchedules(res.data ?? []);
+    } catch {
+      // Schedules are auxiliary; a failure here shouldn't blank the whole view.
+      setSchedules([]);
+    }
+  }
+
   useEffect(() => {
     setLoading(true);
-    void Promise.all([loadWorkflows(), loadRuns()]).finally(() => setLoading(false));
+    void Promise.all([loadWorkflows(), loadRuns(), loadSchedules()]).finally(() =>
+      setLoading(false),
+    );
   }, []);
 
   const selectedWf = useMemo(
@@ -111,6 +124,48 @@ export default function WorkflowsView() {
 
       {notConfigured && (
         <ErrorBanner message="No run store configured (GET /v1/workflow-runs returned 501). Configure a trace_store module (e.g. memory.sqlite) to record run history." />
+      )}
+
+      {schedules.length > 0 && (
+        <Card title="Schedules">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="py-2 pr-4 font-medium">Job</th>
+                  <th className="py-2 pr-4 font-medium">Workflow</th>
+                  <th className="py-2 pr-4 font-medium">Cron</th>
+                  <th className="py-2 pr-4 font-medium">Next fire</th>
+                  <th className="py-2 pr-4 font-medium">Last run</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {schedules.map((s) => (
+                  <tr key={s.name}>
+                    <td className="py-2 pr-4 text-slate-300">{s.name}</td>
+                    <td className="py-2 pr-4 text-slate-400">{s.workflow}</td>
+                    <td className="py-2 pr-4 font-mono text-xs text-slate-400">{s.cron}</td>
+                    <td className="py-2 pr-4 text-slate-400">
+                      {s.next ? timeAgo(s.next) : "—"}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {s.last_run ? (
+                        <span className="flex items-center gap-2">
+                          <StatusBadge status={runBadgeStatus(s.last_run.status)} />
+                          <span className="text-xs text-slate-500">
+                            {timeAgo(s.last_run.created)}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-slate-600">never</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       <Card
@@ -252,7 +307,14 @@ function RunRow({
     <>
       <tr onClick={onToggle} className="cursor-pointer hover:bg-slate-800/50">
         <td className="py-2 pr-4 text-slate-400">{timeAgo(run.created)}</td>
-        <td className="py-2 pr-4 text-slate-300">{run.workflow}</td>
+        <td className="py-2 pr-4 text-slate-300">
+          {run.workflow}
+          {run.trigger === "schedule" && (
+            <span className="ml-2 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
+              scheduled
+            </span>
+          )}
+        </td>
         <td className="py-2 pr-4">
           <StatusBadge status={runBadgeStatus(run.status)} />
         </td>

@@ -78,11 +78,26 @@ export interface WorkflowRun {
   workflow: string;
   created: number;
   status: RunStatus;
+  trigger?: string;
   nodes: NodeResult[] | null;
   usage: Usage;
   cost_usd: number;
   latency_ms: number;
   error?: string;
+}
+
+export interface ScheduleLastRun {
+  id: string;
+  status: RunStatus;
+  created: number;
+}
+
+export interface Schedule {
+  name: string;
+  workflow: string;
+  cron: string;
+  next: number;
+  last_run?: ScheduleLastRun;
 }
 
 export interface ModuleSummary {

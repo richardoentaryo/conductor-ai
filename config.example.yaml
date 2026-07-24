@@ -45,6 +45,17 @@ trace_store:
 workflows:
   dir: ./workflows
 
+# Phase 2: cron-triggered workflow runs. Each job runs a workflow on a standard
+# 5-field cron schedule with fixed inputs; runs persist to the trace store's DB
+# and appear (tagged "scheduled") in the dashboard's run history and /v1/schedules.
+# scheduler:
+#   jobs:
+#     - name: daily-summary
+#       workflow: summarize
+#       cron: "0 9 * * *"        # every day at 09:00 (server local time)
+#       inputs:
+#         topic: "yesterday's support tickets"
+
 # --- Real providers (example; requires the openai/ollama modules + keys) ------
 # providers:
 #   - name: openai-primary

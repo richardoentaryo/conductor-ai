@@ -18,6 +18,7 @@ import (
 	httpapi "github.com/conductor-ai/conductor/api/http"
 	"github.com/conductor-ai/conductor/core/pipeline"
 	"github.com/conductor-ai/conductor/core/ports"
+	"github.com/conductor-ai/conductor/core/scheduler"
 	"github.com/conductor-ai/conductor/core/workflow"
 	"github.com/conductor-ai/conductor/internal/config"
 	"github.com/conductor-ai/conductor/internal/registry"
@@ -25,10 +26,11 @@ import (
 
 // Kernel is a fully composed, runnable Conductor instance.
 type Kernel struct {
-	cfg    *config.Config
-	log    *slog.Logger
-	server *httpapi.Server
-	http   *http.Server
+	cfg       *config.Config
+	log       *slog.Logger
+	server    *httpapi.Server
+	http      *http.Server
+	scheduler *scheduler.Scheduler // nil when no jobs are configured
 
 	// cleanups holds module Cleanup hooks, run in reverse (LIFO) order at shutdown.
 	cleanups []func() error
@@ -88,11 +90,19 @@ func New(cfg *config.Config, log *slog.Logger) (*Kernel, error) {
 		workflows.PersistTo(rs)
 	}
 
+	sched, err := buildScheduler(cfg, workflows, log)
+	if err != nil {
+		k.runCleanups()
+		return nil, err
+	}
+	k.scheduler = sched
+
 	k.server = httpapi.New(httpapi.Config{
 		Engine:    engine,
 		Traces:    traces,
 		Runs:      runs,
 		Workflows: workflows,
+		Scheduler: sched,
 		APIKey:    cfg.Server.APIKey,
 		Summary:   configSummary(cfg),
 		Logger:    log,
@@ -104,8 +114,24 @@ func New(cfg *config.Config, log *slog.Logger) (*Kernel, error) {
 		"traces", traces != nil,
 		"run_store", runs != nil,
 		"workflows", workflows.Len(),
+		"scheduled_jobs", sched.Len(),
 		"address", cfg.Server.Address)
 	return k, nil
+}
+
+// buildScheduler maps configured jobs into scheduler specs and validates them
+// against the loaded workflows. It always returns a usable Scheduler (empty when
+// no jobs are configured), never nil.
+func buildScheduler(cfg *config.Config, workflows *workflow.Service, log *slog.Logger) (*scheduler.Scheduler, error) {
+	var specs []scheduler.JobSpec
+	if cfg.Scheduler != nil {
+		for _, j := range cfg.Scheduler.Jobs {
+			specs = append(specs, scheduler.JobSpec{
+				Name: j.Name, Workflow: j.Workflow, Cron: j.Cron, Inputs: j.Inputs,
+			})
+		}
+	}
+	return scheduler.New(specs, workflows, log)
 }
 
 // buildWorkflows loads workflow definitions (if a directory is configured) and
@@ -241,6 +267,10 @@ func (k *Kernel) Run(ctx context.Context) error {
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+
+	// The scheduler shares the server lifetime: it starts here and stops when ctx
+	// is cancelled (the same signal that triggers HTTP shutdown below).
+	k.scheduler.Start(ctx)
 
 	errCh := make(chan error, 1)
 	go func() {

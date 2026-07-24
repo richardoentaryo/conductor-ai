@@ -62,10 +62,16 @@ func (s *Service) Get(name string) (ports.Workflow, bool) {
 	return wf, ok
 }
 
-// Run executes the named workflow with the given inputs. It returns an error
-// only when the workflow does not exist or a declared input is missing; an
-// execution failure is reported inside the returned run (Status = failed).
+// Run executes the named workflow as an API-triggered run. See RunTriggered.
 func (s *Service) Run(ctx context.Context, name string, inputs map[string]string) (ports.WorkflowRun, error) {
+	return s.RunTriggered(ctx, name, inputs, ports.TriggerAPI)
+}
+
+// RunTriggered executes the named workflow with the given inputs, tagging the
+// run with its trigger source ("api" or "schedule"). It returns an error only
+// when the workflow does not exist or a declared input is missing; an execution
+// failure is reported inside the returned run (Status = failed).
+func (s *Service) RunTriggered(ctx context.Context, name string, inputs map[string]string, trigger string) (ports.WorkflowRun, error) {
 	wf, ok := s.defs[name]
 	if !ok {
 		return ports.WorkflowRun{}, fmt.Errorf("workflow %q not found", name)
@@ -76,6 +82,7 @@ func (s *Service) Run(ctx context.Context, name string, inputs map[string]string
 		}
 	}
 	run := s.engine.Run(ctx, wf, inputs)
+	run.Trigger = trigger
 	// Persist best-effort: a storage failure must not fail an otherwise-complete
 	// run — the caller already holds the full result in the response.
 	if s.runs != nil {
@@ -84,4 +91,11 @@ func (s *Service) Run(ctx context.Context, name string, inputs map[string]string
 		}
 	}
 	return run, nil
+}
+
+// Has reports whether a workflow with the given name is registered. The
+// scheduler uses it to validate job definitions at startup.
+func (s *Service) Has(name string) bool {
+	_, ok := s.defs[name]
+	return ok
 }
